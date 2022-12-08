@@ -23,7 +23,7 @@
 # 2 Варианты использования
 
 Use Case диаграммы приложения "# Утилита прверки целостности файловой системы NTFS":
-![Диалог проверки файлов](../../../Images/System%20design/UseCase/use.png)
+![Диалог проверки файлов](../../../Images/System%20design/UseCase/usecase.png)
 
 
 <a name="disk_file_system_check"/>

@@ -7,9 +7,9 @@
 <a name="1"/>
 
 # 1. Проверить целостность файловой системы диска
-![Диаграмма активностей 1](../../../Images/System%20design/Action/ActionDiskFileSystemCheck.png)
+![Диаграмма активностей 1](../../../Images/System%20design/Activity/ActionDiskFileSystemCheck.png)
 
 <a name="2"/>
 
 # 2. Проверить целостность файловой системы директории
-![Диаграмма активностей 2](../../../Images/System%20design/Action/ActionDirectoryFileSystemCheck.png)
+![Диаграмма активностей 2](../../../Images/System%20design/Activity/ActionDirectoryFileSystemCheck.png)
