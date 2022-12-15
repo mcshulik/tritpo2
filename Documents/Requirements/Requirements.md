@@ -65,7 +65,7 @@
 
 ## Окно вывода приложение.
  
-![Окно вывода приложения](/../.././Images/Mockups/application_output_window.png)
+![Окно вывода приложения](./../../Images/Mockups/application_output_window.png)
 
 <a name="application_audience"/>
 
