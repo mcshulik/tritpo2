@@ -566,5 +566,5 @@ int main()
     if (output != NULL)
         CloseHandle(output);
 
-    return result;
+    return 0;
 }
