@@ -144,7 +144,7 @@ void seek(HANDLE h, ULONGLONG position)
         LARGE_INTEGER result;
         if (!SetFilePointerEx(h, pos, &result, SEEK_SET) ||
             pos.QuadPart != result.QuadPart)
-            throw "Failed to seek";
+            throw (std::string) "Не удалось найти файл";
     }
     catch (...)
     {
@@ -195,7 +195,7 @@ vector<Run> parseRunList(BYTE* runList, DWORD runListSize, LONGLONG totalCluster
         while (*p != 0x00)
         {
             if (p + 1 > runList + runListSize)
-                throw _T("Invalid data run");
+                throw (std::string) "Неверные данные";
 
             int lenLength = *p & 0xf;
             int lenOffset = *p >> 4;
@@ -204,10 +204,10 @@ vector<Run> parseRunList(BYTE* runList, DWORD runListSize, LONGLONG totalCluster
             if (p + lenLength + lenOffset > runList + runListSize ||
                 lenLength >= 8 ||
                 lenOffset >= 8)
-                throw _T("Invalid data run");
+                throw (std::string)"Неверные данные";
 
             if (lenOffset == 0)
-                throw _T("Sparse file is not supported");
+                throw (std::string)"Файл не поддерживается";
 
             ULONGLONG length = 0;
             for (int i = 0; i < lenLength; i++)
@@ -222,7 +222,7 @@ vector<Run> parseRunList(BYTE* runList, DWORD runListSize, LONGLONG totalCluster
             offset += offsetDiff;
 
             if (offset < 0 || totalCluster <= offset)
-                throw _T("Invalid data run");
+                throw (std::string)"Неверные данные";
 
             result.push_back(Run(offset, length));
         }
@@ -244,7 +244,7 @@ void fixRecord(BYTE* buffer, DWORD recordSize, DWORD sectorSize)
         LPWORD update = LPWORD(buffer + header->updateOffset);
 
         if (LPBYTE(update + header->updateNumber) > buffer + recordSize)
-            throw _T("Update sequence number is invalid");
+            throw (std::string)"Недопустимый порядковый номер файла";
 
         for (int i = 1; i < header->updateNumber; i++)
             *LPWORD(buffer + i * sectorSize - 2) = update[i];
@@ -280,13 +280,13 @@ void readRecord(HANDLE h, LONGLONG recordIndex, const vector<Run>& MFTRunList, D
                 vcn += run.length;
             }
             if (offset == -1LL)
-                throw _T("Failed to read file record");
+                throw (std::string)"Не удалось прочитать запись файла";
 
             seek(h, offset);
             DWORD read;
             if (!ReadFile(h, buffer + sector * sectorSize, sectorSize, &read, NULL) ||
                 read != sectorSize)
-                throw _T("Failed to read file record");
+                throw (std::string)"Не удалось прочитать запись файла";
         }
 
         fixRecord(buffer, recordSize, sectorSize);
@@ -366,7 +366,7 @@ int readRunList(HANDLE h, LONGLONG recordIndex, DWORD typeID, const vector<Run>&
                 stage = 4;
 
                 if (attrListNR->compressSize != 0)
-                    throw _T("Compressed non-resident attribute list is not " "supported");
+                    throw (std::string)"Список нерезидентных атрибутов не поддерживается";
 
                 vector<Run> attrRunList = parseRunList (LPBYTE(attrListNR) + attrListNR->runListOffset, attrListNR->length - attrListNR->runListOffset, totalCluster);
 
@@ -385,7 +385,7 @@ int readRunList(HANDLE h, LONGLONG recordIndex, DWORD typeID, const vector<Run>&
                         DWORD read = 0;
                         if (!ReadFile(h, &cluster[0], clusterSize, &read, NULL) ||
                             read != clusterSize)
-                            throw _T("Failed to read attribute list non-resident " "data");
+                            throw (std::string)"Не удалось прочитать список атрибутов нерезидента ";
                         LONGLONG s = min(attrListNR->contentSize - p, clusterSize);
                         memcpy(&attrListData[p], &cluster[0], s);
                         p += s;
@@ -410,13 +410,13 @@ int readRunList(HANDLE h, LONGLONG recordIndex, DWORD typeID, const vector<Run>&
 
                     readRecord(h, attr->recordNumber & 0xffffffffffffLL, MFTRunList, recordSize, clusterSize, sectorSize, &extRecord[0]);
                     if (memcmp(extRecordHeader->signature, "FILE", 4) != 0)
-                        throw _T("Extenion record is invalid");
+                        throw (std::string)"Запись расширения недействительна";
 
                     AttributeHeaderNR* extAttr = (AttributeHeaderNR*)findAttribute (extRecordHeader, recordSize, typeID);
                     if (extAttr == NULL)
-                        throw _T("Attribute is not found in extension record");
+                        throw (std::string)"Атрибут не найден в записи расширения";
                     if (extAttr->formCode == 0)
-                        throw _T("Attribute in extension record is resident");
+                        throw (std::string) "Атрибут в записи расширения является резидентным";
 
                     if (contentSize != NULL && *contentSize == -1)
                         *contentSize = extAttr->contentSize;
@@ -483,17 +483,17 @@ int main()
 
         h = CreateFile(drive, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
         if (h == INVALID_HANDLE_VALUE)
-            throw _T("Не удалось открыть директорию");
+            throw (std::string)"Не удалось открыть директорию";
 
         //  Boot Sector
         BootSector bootSector;
         DWORD read;
         if (!ReadFile(h, &bootSector, sizeof bootSector, &read, NULL) || read != sizeof bootSector)
-            throw _T("Не удалось прочитать загрузочный сектор");
+            throw (std::string) "Не удалось прочитать загрузочный сектор";
 
         printf("OEM ID: \"%s\"\n", bootSector.oemID);
         if (memcmp(bootSector.oemID, "NTFS    ", 8) != 0)
-            throw _T("Не поддерживается файовая система NTFS");
+            throw (std::string)"Не поддерживается файовая система NTFS";
 
         DWORD sectorSize = bootSector.bytePerSector;
         DWORD clusterSize = bootSector.bytePerSector * bootSector.sectorPerCluster;
@@ -559,8 +559,8 @@ int main()
         std::cout << "Неизвестная ошибка" << std::endl;
     }
 
-    if (argv != NULL)
-        delete argv;
+    //if (argv != NULL)
+        //delete argv;
     if (h != NULL)
         CloseHandle(h);
     if (output != NULL)
