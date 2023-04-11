@@ -15,126 +15,117 @@ using namespace std;
 
 #pragma pack(push, 1)
 
-//  http://www.writeblocked.org/resources/ntfs_cheat_sheets.pdf
-
-struct BootSector
+struct bootSector
 {
-    BYTE        jump[3];
-    BYTE        oemID[8];
-    WORD        bytePerSector;
-    BYTE        sectorPerCluster;
-    BYTE        reserved[2];
-    BYTE        zero1[3];
-    BYTE        unused1[2];
-    BYTE        mediaDescriptor;
-    BYTE        zeros2[2];
-    WORD        sectorPerTrack;
-    WORD        headNumber;
-    DWORD       hiddenSector;
-    BYTE        unused2[8];
-    LONGLONG    totalSector;
-    LONGLONG    MFTCluster;
-    LONGLONG    MFTMirrCluster;
-    signed char clusterPerRecord;
-    BYTE        unused3[3];
-    signed char clusterPerBlock;
-    BYTE        unused4[3];
-    LONGLONG    serialNumber;
-    DWORD       checkSum;
-    BYTE        bootCode[0x1aa];
-    BYTE        endMarker[2];
+    BYTE        jump[3]; // Не имеет значения(переход к загрузочному коду)
+    BYTE        oemID[8]; // магическая последовательность ntfs
+    WORD        bytePerSector; // размер сектора в байтах
+    BYTE        sectorPerCluster; // размер сластера в секторах
+    BYTE        reserved[2]; // 0
+    BYTE        zero1[3]; // 0
+    BYTE        unused1[2]; // 0
+    BYTE        mediaDescriptor; // 0xf8 = жёсткий диск
+    BYTE        zeros2[2]; // 0
+    WORD        sectorPerTrack; // Требуется для загрузки Windows
+    WORD        headNumber; // Требуется для загрузки Windows
+    DWORD       hiddenSector; // Смещение к началу раздела относительно диска в секторах.Требуется для загрузки Windows
+    BYTE        unused2[8]; // 0
+    LONGLONG    totalSector; // количество секторов
+    LONGLONG    MFTCluster; // Кластерное расположение данных MFT
+    LONGLONG    MFTMirrCluster; // Кластерное расположение копии mft
+    signed char clusterPerRecord; // Размер записи MFT в кластерах
+    BYTE        unused3[3]; // 0
+    signed char clusterPerBlock; // Размер индексного блока в кластерах
+    BYTE        unused4[3]; // 0
+    LONGLONG    serialNumber; // Не имеет значения(серийный номер)
+    DWORD       checkSum; // Контрольная сумма загрузочного сектора
+    BYTE        bootCode[0x1aa]; // Не имеет значения(код загрузки)
+    BYTE        endMarker[2]; // Конец магической последовательности загрузочного сектора.Всегда 0xaa55 с little endian
 };
+
+
 
 struct RecordHeader
 {
-    BYTE        signature[4];
-    WORD        updateOffset;
-    WORD        updateNumber;
-    LONGLONG    logFile;
-    WORD        sequenceNumber;
-    WORD        hardLinkCount;
-    WORD        attributeOffset;
-    WORD        flag;
-    DWORD       usedSize;
-    DWORD       allocatedSize;
-    LONGLONG    baseRecord;
-    WORD        nextAttributeID;
-    BYTE        unsed[2];
-    DWORD       MFTRecord;
+    BYTE        signature[4]; // Тип записи NTFS.Когда значение Type рассматривается как последовательность из четырех однобайтовые символы, обычно это аббревиатура типа.Определенные значения включают :
+                              //‘FILE’ ‘INDX’ ‘BAAD’ ‘HOLE’ ‘CHKD’
+    WORD        updateOffset; // Смещение в байтах от начала структуры до массива последовательности обновления.
+    WORD        updateNumber; // Количество значений в массиве последовательности обновления
+    LONGLONG    logFile; // запись изменения в структуре тома.
+    WORD        sequenceNumber; // Порядковый номер обновления записи NTFS.
+    WORD        hardLinkCount; // Количество ссылок каталога на запись MFT
+    WORD        attributeOffset; // Смещение в байтах от начала структуры до первого атрибута записи MFT.
+    WORD        flag; // Битовый массив флагов, определяющих свойства записи MFT.Определенные значения включают : 0x0001 ; // запись MFT используется, 0x0002 ; // запись MFT представляет каталог
+    DWORD       usedSize; // Количество байтов, используемых записью MFT.
+    DWORD       allocatedSize; // Количество байтов, выделенных для записи MFT.
+    LONGLONG    baseRecord; // Если запись MFT содержит атрибуты, превышающие базовую запись MFT, этот элемент содержит номер ссылки на файл базовой записи; в противном случае он содержит ноль.
+    WORD        nextAttributeID; // Номер, который будет присвоен следующему атрибуту, добавленному в запись MFT.
+    BYTE        unsed[2]; // 0
+    DWORD       MFTRecord; // Номер записи mft
 };
 
 struct AttributeHeaderR
 {
-    DWORD       typeID;
-    DWORD       length;
-    BYTE        formCode;
-    BYTE        nameLength;
-    WORD        nameOffset;
-    WORD        flag;
-    WORD        attributeID;
-    DWORD       contentLength;
-    WORD        contentOffset;
-    WORD        unused;
+	DWORD       typeID; // Тип атрибута
+	DWORD       length; // Размер в байтах резидентной части атрибута
+	BYTE        formCode; // Указывает, когда это значение равно true, что значение атрибута является нерезидентным.
+	BYTE        nameLength; // Размер в символах имени(если есть) атрибута.
+	WORD        nameOffset; // Смещение в байтах от начала структуры до имени атрибута.Атрибут хранится в виде строки Unicode.
+	WORD        flag; // Битовый массив флагов, определяющих свойства атрибута. 0x0001 ; // атрибут сжат
+	WORD        attributeID; // ID атрибута
+	DWORD       contentLength; // Размер в байтах значения атрибута.
+	WORD        contentOffset; // Смещение в байтах от начала структуры до значения атрибута
+	WORD        unused; // 0
 };
 
 struct AttributeHeaderNR
 {
-    DWORD       typeID;
-    DWORD       length;
-    BYTE        formCode;
-    BYTE        nameLength;
-    WORD        nameOffset;
-    WORD        flag;
-    WORD        attributeID;
-    LONGLONG    startVCN;
-    LONGLONG    endVCN;
-    WORD        runListOffset;
-    WORD        compressSize;
-    DWORD       zero;
-    LONGLONG    contentDiskSize;
-    LONGLONG    contentSize;
-    LONGLONG    initialContentSize;
-};
-
-struct FileName
-{
-    LONGLONG    parentDirectory;
-    LONGLONG    dateCreated;
-    LONGLONG    dateModified;
-    LONGLONG    dateMFTModified;
-    LONGLONG    dateAccessed;
-    LONGLONG    logicalSize;
-    LONGLONG    diskSize;
-    DWORD       flag;
-    DWORD       reparseValue;
-    BYTE        nameLength;
-    BYTE        nameType;
-    BYTE        name[1];
+    DWORD       typeID; // Тип атрибута
+    DWORD       length; // Размер в байтах нерезидентной части атрибута
+    BYTE        formCode; // Указывает, когда это значение равно true, что значение атрибута является нерезидентным.
+    BYTE        nameLength; // Размер в символах имени(если есть) атрибута.
+    WORD        nameOffset; // азмер в символах имени(если есть) атрибута.
+    WORD        flag; // Битовый массив флагов, определяющих свойства атрибута. 0x0001 ; // атрибут сжат
+    WORD        attributeID; // ID атрибута
+    LONGLONG    startVCN; // Наименьший действительный номер виртуального кластера(VCN) этой части значения атрибута.Если только значение атрибута не сильно фрагментировано(до такой степени, что список атрибутов
+                          //необходимо для его описания), существует только одна часть значения атрибута, а значение LowVcn равен нулю.
+    LONGLONG    endVCN; // Самый высокий допустимый VCN этой части значения атрибута
+    WORD        runListOffset; // Смещение в байтах от начала структуры до массива выполнения, содержащего сопоставления между VCN и номерами логических кластеров(LCN).
+    WORD        compressSize; // Размер в байтах значения атрибута после сжатия.Этот член присутствует только когда атрибут сжат.
+    DWORD       zero; // 0
+    LONGLONG    contentDiskSize; // Размер в байтах дискового пространства, выделенного для хранения значения атрибута.
+    LONGLONG    contentSize; // Размер в байтах значения атрибута.Он может быть больше, чем AllocatedSize, если значение атрибута сжато или разрежено.
+    LONGLONG    initialContentSize; // Размер в байтах инициализированной части значения атрибута.
 };
 
 struct AttributeRecord
 {
-    DWORD       typeID;
-    WORD        recordLength;
-    BYTE        nameLength;
-    BYTE        nameOffset;
-    LONGLONG    lowestVCN;
-    LONGLONG    recordNumber;
-    WORD        sequenceNumber;
-    WORD        reserved;
+    DWORD       typeID; // Тип атрибута
+    WORD        recordLength; // Размер в байтах записи списка атрибутов.
+    BYTE        nameLength; //Размер в символах имени (если есть) атрибута
+    BYTE        nameOffset; //Смещение в байтах от начала структуры AttributeRecord до атрибута name. Имя атрибута хранится в виде строки Unicode.
+    LONGLONG    lowestVCN; //Наименьший действительный номер виртуального кластера (VCN) этой части значения атрибута.
+    LONGLONG    recordNumber; //Номер записи атрибутов
+    WORD        sequenceNumber;  //Порядковый номер обновления записи NTFS.
+    WORD        reserved; //0
 };
 
 #pragma pack(pop)
 
 struct Run
 {
-    LONGLONG    offset;
-    LONGLONG    length;
+    LONGLONG    offset; // смещение
+    LONGLONG    length; // размер
     Run() : offset(0LL), length(0LL) {}
     Run(LONGLONG offset, LONGLONG length) : offset(offset), length(length) {}
 };
 
-void seek(HANDLE h, ULONGLONG position)
+//перемещает указатель в файле и выводит ошибку, если файл повреждён
+void seek(
+    /*[in]*/HANDLE h, 
+    /*[in]*/ULONGLONG position)
+    //[in] h - дескриптор устройства
+    //[in] position - смещение, на которое нужно передвинуть указатель
 {
     try
     {
@@ -153,7 +144,14 @@ void seek(HANDLE h, ULONGLONG position)
     }
 }
 
-LPBYTE findAttribute(RecordHeader* record, DWORD recordSize, DWORD typeID, function<bool(LPBYTE)> condition = [&](LPBYTE) {return true; })
+//проводит поиск атрибута файла и выводит информацию, если файл повреждён
+LPBYTE findAttribute(
+    /*[in]*/RecordHeader* record, 
+    /*[in]*/DWORD recordSize, 
+    /*[in]*/DWORD typeID)
+    //[in] record - текущая запись
+    //[in] recordSize - размер записи
+    //[in] typeID - атрибут файла, который необходимо найти
 {
     try
     {
@@ -168,8 +166,7 @@ LPBYTE findAttribute(RecordHeader* record, DWORD recordSize, DWORD typeID, funct
                 break;
 
             if (header->typeID == typeID &&
-                p + header->length <= LPBYTE(record) + recordSize &&
-                condition(p))
+                p + header->length <= LPBYTE(record) + recordSize)
                 return p;
 
             p += header->length;
@@ -183,7 +180,14 @@ LPBYTE findAttribute(RecordHeader* record, DWORD recordSize, DWORD typeID, funct
     }
 }
 
-vector<Run> parseRunList(BYTE* runList, DWORD runListSize, LONGLONG totalCluster)
+//парсит набор данных и выводит информацию, если файл повреждён
+vector<Run> parseRunList(
+    /*[in]*/BYTE* runList, 
+    /*[in]*/DWORD runListSize, 
+    /*[in]*/LONGLONG totalCluster)
+    //[in] runList - указатель на набор данных
+    //[in] runListSize - размер набора данных
+    //[in] totalCluster - количество кластеров
 {
     try
     {
@@ -236,7 +240,14 @@ vector<Run> parseRunList(BYTE* runList, DWORD runListSize, LONGLONG totalCluster
     }
 }
 
-void fixRecord(BYTE* buffer, DWORD recordSize, DWORD sectorSize)
+//проверяет порядковый номер файла и выводит информацию, если файл повреждён
+void fixRecord(
+    /*[in]*/BYTE* buffer, 
+    /*[in]*/DWORD recordSize, 
+    /*[in]*/DWORD sectorSize)
+    //[in] buffer - указатель на буфер
+    //[in] recordSize - размер записи
+    //[in] clusterSize - размер кластера
 {
     try
     {
@@ -256,7 +267,22 @@ void fixRecord(BYTE* buffer, DWORD recordSize, DWORD sectorSize)
     }
 }
 
-void readRecord(HANDLE h, LONGLONG recordIndex, const vector<Run>& MFTRunList, DWORD recordSize, DWORD clusterSize, DWORD sectorSize, BYTE* buffer)
+//читает текущую запись и  выводит информацию, если файл повреждён
+void readRecord(
+    /*[in]*/HANDLE h, 
+    /*[in]*/LONGLONG recordIndex, 
+    /*[in]*/const vector<Run>& MFTRunList, 
+    /*[in]*/DWORD recordSize, 
+    /*[in]*/DWORD clusterSize, 
+    /*[in]*/DWORD sectorSize, 
+    /*[in]*/BYTE* buffer)
+    //[in] h - дескриптор устройства
+    //[in] recordIndex - смещение сектора
+    //[in] запись MFT
+    //[in] recordSize - размер записи
+    //[in] clusterSize - размер кластера
+    //[in] sectorSize - размер сектора
+    //[in] buffer - указатель на буфер
 {
     try
     {
@@ -298,10 +324,29 @@ void readRecord(HANDLE h, LONGLONG recordIndex, const vector<Run>& MFTRunList, D
     }
 }
 
-//  read a run list of typeID of recordIndex
-//  return stage of the attribute
-int readRunList(HANDLE h, LONGLONG recordIndex, DWORD typeID, const vector<Run>& MFTRunList, DWORD recordSize, DWORD clusterSize,
-    DWORD sectorSize, LONGLONG totalCluster, vector<Run>* runList, LONGLONG* contentSize = NULL)
+//возвращает стадию атрибута в int
+int readRunList(
+    /*[in]*/HANDLE h, 
+    /*[in]*/LONGLONG recordIndex, 
+    /*[in]*/DWORD typeID, 
+    /*[in]*/const vector<Run>& MFTRunList, 
+    /*[in]*/DWORD recordSize, 
+    /*[in]*/DWORD clusterSize,
+    /*[in]*/DWORD sectorSize, 
+    /*[in]*/LONGLONG totalCluster, 
+    /*[in]*/vector<Run>* runList, 
+    /*[out]*/LONGLONG* contentSize = NULL)
+    //[in] h - дескриптор устройства
+    //[in] recordIndex - смещение сектора
+    //[in] typeID - Тип атрибута
+    //[in] MFTRunList - запись MFT
+    //[in] recordSize - размер записи
+    //[in] clusterSize - размер кластера
+    //[in] sectorSize - размер сектора
+    //[in] totalCluster - количество кластеров
+    //[in] runList - запись MFT
+    //[out] contentSize - размер MFT
+
 {
     try
     {
@@ -441,7 +486,6 @@ int readRunList(HANDLE h, LONGLONG recordIndex, DWORD typeID, const vector<Run>&
 
 int main()
 {
-    //PWSTR* argv = NULL;
     char* argv = new char;
     HANDLE h = INVALID_HANDLE_VALUE;
     HANDLE output = INVALID_HANDLE_VALUE;
@@ -460,7 +504,7 @@ int main()
         {
         case '1':
         {
-            std::cout <<  "Введите путь директории" << std::endl;
+            std::cout << "Введите путь директории" << std::endl;
             cin.getline(argv, 256, '\n');
             break;
         }
@@ -496,6 +540,7 @@ int main()
             throw (std::string)"Не поддерживается файовая система NTFS";
 
         DWORD sectorSize = bootSector.bytePerSector;
+        //DWORD sectorSize = 2;
         DWORD clusterSize = bootSector.bytePerSector * bootSector.sectorPerCluster;
         DWORD recordSize = bootSector.clusterPerRecord >= 0 ? bootSector.clusterPerRecord * clusterSize : 1 << -bootSector.clusterPerRecord;
         LONGLONG totalCluster = bootSector.totalSector / bootSector.sectorPerCluster;
@@ -565,6 +610,8 @@ int main()
         CloseHandle(h);
     if (output != NULL)
         CloseHandle(output);
+
+    system("pause");
 
     return 0;
 }
