@@ -8,6 +8,7 @@
 #include <functional>
 #include <iostream>
 #include <conio.h>
+#include <limits>
 
 #pragma comment(lib, "shell32.lib")
 
@@ -15,7 +16,7 @@ using namespace std;
 
 #pragma pack(push, 1)
 
-struct bootSector
+struct BootSector
 {
     BYTE        jump[3]; // Не имеет значения(переход к загрузочному коду)
     BYTE        oemID[8]; // магическая последовательность ntfs
@@ -490,128 +491,141 @@ int main()
     HANDLE h = INVALID_HANDLE_VALUE;
     HANDLE output = INVALID_HANDLE_VALUE;
     int result = -1;
+    bool stop = false;
 
-
-    try
+    while (true)
     {
-        _tsetlocale(LC_ALL, _T(""));
+        try
+        {
+            _tsetlocale(LC_ALL, _T(""));
 
-        std::cout << "Выберите тип работы приложения NTFS_check" << std::endl << std::endl << "1 - проверка целостности директории" << std::endl 
-            <<  "2 - проверка целостности диска" << std::endl;
-        char c = _getche();
-        std::cout << std::endl;
-        switch (c)
-        {
-        case '1':
-        {
-            std::cout << "Введите путь директории" << std::endl;
-            cin.getline(argv, 256, '\n');
-            break;
-        }
-        case '2':
-        {
-            std::cout << std::endl << "Введите букву диска" << std::endl;
-            argv[0] = _getche();
+            std::cout << "Выберите тип работы приложения NTFS_check" << std::endl << "1 - проверка целостности директории" << std::endl
+                << "2 - проверка целостности диска" << std::endl << "3 - выход" << std::endl;
+            char c = _getche();
             std::cout << std::endl;
-            break;
+            switch (c)
+            {
+            case '1':
+            {
+                std::cout << std::endl << "Введите путь директории" << std::endl;
+                cin.getline(argv, 256, '\n');
+                break;
+            }
+            case '2':
+            {
+                std::cout << std::endl << "Введите букву диска" << std::endl;
+                argv[0] = _getche();
+                std::cout << std::endl;
+                break;
+            }
+            case '3':
+            {
+                stop = true;
+                break;
+            }
+            default:
+                argv[0] = 0;
+            }
+
+            if (stop)
+            {
+                system("pause");
+                return 0;
+            }
+
+            TCHAR drive[] = _T("\\\\?\\_:");
+            LONGLONG targetRecord = -1;
+            LPWSTR outputFile = NULL;
+
+            drive[4] = argv[0];
+
+            h = CreateFile(drive, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+            if (h == INVALID_HANDLE_VALUE)
+                throw (std::string)"Не удалось открыть директорию";
+
+            //  Boot Sector
+            BootSector bootSector;
+            DWORD read;
+            if (!ReadFile(h, &bootSector, sizeof bootSector, &read, NULL) || read != sizeof bootSector)
+                throw (std::string)"Не удалось прочитать загрузочный сектор";
+
+            printf("OEM ID: \"%s\"\n", bootSector.oemID);
+            if (memcmp(bootSector.oemID, "NTFS    ", 8) != 0)
+                throw (std::string)"Не поддерживается файовая система NTFS";
+
+            DWORD sectorSize = bootSector.bytePerSector;
+            //DWORD sectorSize = 2;
+            DWORD clusterSize = bootSector.bytePerSector * bootSector.sectorPerCluster;
+            DWORD recordSize = bootSector.clusterPerRecord >= 0 ? bootSector.clusterPerRecord * clusterSize : 1 << -bootSector.clusterPerRecord;
+            LONGLONG totalCluster = bootSector.totalSector / bootSector.sectorPerCluster;
+
+            if (!sectorSize || !clusterSize || !recordSize || !totalCluster || !bootSector.sectorPerCluster || !bootSector.totalSector || !bootSector.MFTCluster || !bootSector.clusterPerRecord)
+                throw (std::string)"Директория или диск повреждены!";
+
+
+            _tprintf(_T("Byte/Sector: %u\n"), sectorSize);
+            _tprintf(_T("Sector/Cluster: %u\n"), bootSector.sectorPerCluster);
+            _tprintf(_T("Total Sector: %llu\n"), bootSector.totalSector);
+            _tprintf(_T("Cluster of MFT: %llu\n"), bootSector.MFTCluster);
+            _tprintf(_T("Cluster/Record: %u\n"), bootSector.clusterPerRecord);
+            _tprintf(_T("Cluster Size: %u\n"), clusterSize);
+            _tprintf(_T("Record Size: %u\n"), recordSize);
+
+            //  Read MFT size and run list
+            vector<Run> MFTRunList(1, Run(bootSector.MFTCluster, 24 * recordSize / clusterSize));
+            LONGLONG MFTSize = 0LL;
+            int MFTStage = readRunList(h,
+                0, /*$MFT*/
+                0x80,   /*$Data */
+                MFTRunList,
+                recordSize,
+                clusterSize,
+                sectorSize,
+                totalCluster,
+                &MFTRunList,
+                &MFTSize);
+
+            _tprintf(_T("MFT stage: %d\n"), MFTStage);
+            if (MFTStage == 0 || MFTStage == 1)
+                throw _T("MFT stage is 1");
+            _tprintf(_T("MFT size: %llu\n"), MFTSize);
+            ULONGLONG recordNumber = MFTSize / recordSize;
+            _tprintf(_T("Record number: %llu\n"), recordNumber);
+            _tprintf(_T("MFT run list: %lld\n"), MFTRunList.size());
+            for (Run& run : MFTRunList)
+                _tprintf(_T("  %16llx %16llx\n"), run.offset, run.length);
+
+            //  Read file list
+            //_tprintf(_T("File List:\n"));
+
+            vector<BYTE> record(recordSize);
+            RecordHeader* recordHeader = (RecordHeader*)&record[0];
+
+            std::cout << std::endl << "Директория или диск не повреждены!" << std::endl;
+
+            result = 0;
         }
-        default:
-            argv[0] = 0;
+        catch (LPWSTR error)
+        {
+            std::cout << "Ошибка: " << error << std::endl;
+        }
+        catch (std::string error)
+        {
+            std::cout << error << std::endl << std::endl << std::endl;
+        }
+        catch (...)
+        {
+            std::cout << "Неизвестная ошибка" << std::endl;
         }
 
-        TCHAR drive[] = _T("\\\\?\\_:");
-        LONGLONG targetRecord = -1;
-        LPWSTR outputFile = NULL;
-
-        drive[4] = argv[0];
-
-        h = CreateFile(drive, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
-        if (h == INVALID_HANDLE_VALUE)
-            throw (std::string)"Не удалось открыть директорию";
-
-        //  Boot Sector
-        BootSector bootSector;
-        DWORD read;
-        if (!ReadFile(h, &bootSector, sizeof bootSector, &read, NULL) || read != sizeof bootSector)
-            throw (std::string) "Не удалось прочитать загрузочный сектор";
-
-        printf("OEM ID: \"%s\"\n", bootSector.oemID);
-        if (memcmp(bootSector.oemID, "NTFS    ", 8) != 0)
-            throw (std::string)"Не поддерживается файовая система NTFS";
-
-        DWORD sectorSize = bootSector.bytePerSector;
-        //DWORD sectorSize = 2;
-        DWORD clusterSize = bootSector.bytePerSector * bootSector.sectorPerCluster;
-        DWORD recordSize = bootSector.clusterPerRecord >= 0 ? bootSector.clusterPerRecord * clusterSize : 1 << -bootSector.clusterPerRecord;
-        LONGLONG totalCluster = bootSector.totalSector / bootSector.sectorPerCluster;
-
-        if (!sectorSize || !clusterSize || !recordSize || !totalCluster || !bootSector.sectorPerCluster || !bootSector.totalSector || !bootSector.MFTCluster || !bootSector.clusterPerRecord)
-            throw (std::string) "Директория или диск повреждены!";
-
-
-        _tprintf(_T("Byte/Sector: %u\n"), sectorSize);
-        _tprintf(_T("Sector/Cluster: %u\n"), bootSector.sectorPerCluster);
-        _tprintf(_T("Total Sector: %llu\n"), bootSector.totalSector);
-        _tprintf(_T("Cluster of MFT: %llu\n"), bootSector.MFTCluster);
-        _tprintf(_T("Cluster/Record: %u\n"), bootSector.clusterPerRecord);
-        _tprintf(_T("Cluster Size: %u\n"), clusterSize);
-        _tprintf(_T("Record Size: %u\n"), recordSize);
-
-        //  Read MFT size and run list
-        vector<Run> MFTRunList (1, Run (bootSector.MFTCluster, 24 * recordSize / clusterSize));
-        LONGLONG MFTSize = 0LL;
-        int MFTStage = readRunList (h, 
-            0, /*$MFT*/
-            0x80,   /*$Data */
-            MFTRunList,
-            recordSize,
-            clusterSize,
-            sectorSize,
-            totalCluster,
-            &MFTRunList,
-            &MFTSize);
-
-        _tprintf(_T("MFT stage: %d\n"), MFTStage);
-        if (MFTStage == 0 || MFTStage == 1)
-            throw _T("MFT stage is 1");
-        _tprintf(_T("MFT size: %llu\n"), MFTSize);
-        ULONGLONG recordNumber = MFTSize / recordSize;
-        _tprintf(_T("Record number: %llu\n"), recordNumber);
-        _tprintf(_T("MFT run list: %lld\n"), MFTRunList.size());
-        for (Run& run : MFTRunList)
-            _tprintf(_T("  %16llx %16llx\n"), run.offset, run.length);
-
-        //  Read file list
-        //_tprintf(_T("File List:\n"));
-
-        vector<BYTE> record(recordSize);
-        RecordHeader* recordHeader = (RecordHeader*)&record[0];
-
-        std::cout << std::endl << "Директория или диск не повреждены!" << std::endl;
-
-        result = 0;
+        //if (argv != NULL)
+            //delete argv;
+        cin.clear();
+        if (h != NULL)
+            CloseHandle(h);
+        if (output != NULL)
+            CloseHandle(output);
     }
-    catch (LPWSTR error)
-    {
-        std::cout << "Ошибка: " << error << std::endl;
-    }
-    catch (std::string error)
-    {
-        std::cout << error << std::endl;
-    }
-    catch (...)
-    {
-        std::cout << "Неизвестная ошибка" << std::endl;
-    }
-
-    //if (argv != NULL)
-        //delete argv;
-    if (h != NULL)
-        CloseHandle(h);
-    if (output != NULL)
-        CloseHandle(output);
-
-    system("pause");
 
     return 0;
 }
